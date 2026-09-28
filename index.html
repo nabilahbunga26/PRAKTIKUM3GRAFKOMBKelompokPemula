@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Praktikum 3 — Interactive Transformation Playground | Kelompok Pemula</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Modul Praktikum Grafika Komputer — Pertemuan 3</h1>
+  <p>Interactive Transformation Playground dengan WebGL2 · Kelompok Pemula</p>
+</div>
+
+<div class="wrap">
+
+  <!-- TEAM -->
+  <section class="block yellow">
+    <span class="tag">Kelompok Pemula</span>
+    <h2>Anggota Kelompok</h2>
+    <div class="team-grid">
+      <div class="member">
+        <span class="nm">1. Nabilah Bunga Sulistia</span>
+        <span class="nrp">NRP : 5025241073</span>
+      </div>
+      <div class="member">
+        <span class="nm">2. Callista Fidelya Roba Gultom</span>
+        <span class="nrp">NRP : 5025241086</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- COURSE INFO -->
+  <section class="block">
+    <h2>Informasi Mata Kuliah</h2>
+    <table class="spec">
+      <tr><th>Mata Kuliah</th><td>EF234504 — Grafika Komputer</td></tr>
+      <tr><th>Pertemuan</th><td>3 (Praktikum 3)</td></tr>
+      <tr><th>Topik</th><td>Transformation &amp; Coordinate System dengan WebGL2</td></tr>
+      <tr><th>Dosen Pengampu</th><td>Dr. Darlis Herumurti</td></tr>
+      <tr><th>Departemen</th><td>Teknik Informatika</td></tr>
+      <tr><th>Institusi</th><td>Institut Teknologi Sepuluh Nopember (ITS)</td></tr>
+      <tr><th>Renderer</th><td>WebGL2 (GLSL ES 3.00) + Model Matrix 3×3</td></tr>
+    </table>
+  </section>
+
+  <!-- DESKRIPSI -->
+  <section class="block cyan">
+    <h2>1. Deskripsi Praktikum</h2>
+    <p>Praktikum ini membangun aplikasi WebGL2 interaktif untuk menerapkan <strong>translation, rotation, uniform scaling, non-uniform scaling</strong>, dan <strong>komposisi Model Matrix</strong>. Geometry hanya dibuat sekali dalam <em>local coordinate</em> dan disimpan di satu vertex buffer. Posisi, sudut, dan ukuran setiap objek dibentuk sepenuhnya oleh Model Matrix <code class="pill">mat3</code> yang dikirim ke vertex shader sebagai uniform <code class="pill">u_model</code> — data vertex asli tidak pernah diubah.</p>
+    <p>Tiga objek memakai kembali <strong>satu vertex buffer yang sama</strong>: Object A (dikontrol keyboard/mouse), Object B (animasi otomatis), dan Object C (child dari B). Selain itu, Object A digambar dengan dua urutan transformasi sekaligus agar perbedaan hasil visualnya bisa langsung diamati.</p>
+
+    <h3 style="margin-top:16px;">Alur Utama</h3>
+    <div class="flow">
+      <div class="step">Local Coordinate</div><div class="arrow">→</div>
+      <div class="step">Model Matrix (u_model)</div><div class="arrow">→</div>
+      <div class="step">World Coordinate</div><div class="arrow">→</div>
+      <div class="step">View (u_view)</div><div class="arrow">→</div>
+      <div class="step">Clip Space</div><div class="arrow">→</div>
+      <div class="step">Pixel</div>
+    </div>
+  </section>
+
+  <!-- TUJUAN -->
+  <section class="block">
+    <h2>2. Tujuan Praktikum</h2>
+    <p>Setelah menyelesaikan praktikum ini, mahasiswa diharapkan mampu:</p>
+    <ol class="goals">
+      <li>Membedakan local coordinate dan world coordinate.</li>
+      <li>Membuat matriks translation, rotation, dan scaling dalam bentuk 3×3 (homogeneous coordinate 2D).</li>
+      <li>Menyusun Model Matrix dengan perkalian matriks dan memahami bahwa <strong>urutan perkalian mengubah hasil</strong>.</li>
+      <li>Mengirim matriks ke vertex shader sebagai <code class="pill">uniform mat3</code>.</li>
+      <li>Memakai ulang satu geometry untuk banyak objek dengan Model Matrix yang berbeda.</li>
+      <li>Membuat input keyboard berbasis state dengan <code class="pill">deltaTime</code> agar gerak konsisten di berbagai frame rate.</li>
+      <li>Membangun hubungan parent–child dan orbit sederhana lewat komposisi matriks.</li>
+    </ol>
+  </section>
+
+  <!-- PLAYGROUND -->
+  <section class="block pink">
+    <span class="tag">Live Demo — WebGL2</span>
+    <h2>Transformation Playground</h2>
+    <p><strong>Object A (pink)</strong> dikontrol pengguna. <strong>Object B (biru)</strong> berotasi dan berdenyut otomatis, dan <strong>Object C (hijau)</strong> adalah child B yang mengorbit. Bayangan <strong>oranye</strong> adalah Object A yang dihitung dengan urutan transformasi <em>lawan</em> dari urutan aktif — parameter transform-nya sama persis, hanya urutan perkaliannya yang berbeda. Klik di mana saja pada canvas (atau drag) untuk memindahkan Object A dengan mouse.</p>
+
+    <div id="glError" class="gl-error"></div>
+
+    <div class="stage">
+      <div class="canvas-box">
+        <canvas id="glCanvas" width="960" height="720" tabindex="0" aria-label="Canvas WebGL2 Transformation Playground"></canvas>
+        <canvas id="overlay" width="960" height="720" aria-hidden="true"></canvas>
+        <div class="hud-panel" aria-live="off">
+          <span class="ttl">OBJECT A — HUD</span>
+          <span class="ord" id="hudOrder">Order 1: S → R → T</span>
+          <span class="k">Rumus</span><span id="hudFormula">M = T · R · S</span><br>
+          <span class="k">Position</span><span id="hudPos">x +0.00 y +0.00</span><br>
+          <span class="k">→ dunia</span><span id="hudWorld">x +0.00 y +0.00</span><br>
+          <span class="k">Rotation</span><span id="hudRot">0.0°</span><br>
+          <span class="k">Scale</span><span id="hudScale">sx 1.00 sy 1.00</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span><i style="background:#FF69B4"></i>Object A (order aktif)</span>
+      <span><i style="background:#FF5C0D"></i>Object A (order lawan / bayangan)</span>
+      <span><i style="background:#0047FF"></i>Object B (animasi otomatis)</span>
+      <span><i style="background:#00C853"></i>Object C (child B)</span>
+      <span><i style="background:#FF3D00"></i>Sumbu X</span>
+      <span><i style="background:#00C853"></i>Sumbu Y</span>
+      <span><i style="background:#FFD600"></i>Origin (0,0)</span>
+    </div>
+
+    <div class="hud">
+      <span id="hudFps">FPS: 0</span>
+      <span id="hudMouse">Mouse: —</span>
+      <span id="hudPreset">Preset: manual</span>
+      <span id="hudB">B: rot 0° · scale 1.00</span>
+      <span id="hudGhost" class="on">Bayangan order lawan: ON</span>
+      <span id="hudChild" class="on">Parent–child (C): ON</span>
+    </div>
+
+    <div class="controls">
+      <button class="ctrl" id="btnOrder" type="button">Toggle Order (T)</button>
+      <button class="ctrl info" id="btnPreset1" type="button">Preset 1 (1)</button>
+      <button class="ctrl info" id="btnPreset2" type="button">Preset 2 (2)</button>
+      <button class="ctrl info" id="btnPreset3" type="button">Preset 3 (3)</button>
+      <button class="ctrl on" id="btnGhost" type="button">Bayangan Order Lawan (H)</button>
+      <button class="ctrl on" id="btnChild" type="button">Parent–Child (P)</button>
+      <button class="ctrl danger" id="btnReset" type="button">Reset Transform (R)</button>
+      <select class="ctrl" id="selFps" aria-label="Simulasi frame rate">
+        <option value="0" selected>Frame rate: Auto</option>
+        <option value="30">Frame rate: dibatasi 30 FPS</option>
+        <option value="15">Frame rate: dibatasi 15 FPS</option>
+      </select>
+    </div>
+
+    <div class="shortcuts">
+      <div class="shortcut-row"><span class="keycap">←</span><span class="keycap">↑</span><span class="keycap">↓</span><span class="keycap">→</span> &rarr; translation Object A</div>
+      <div class="shortcut-row"><span class="keycap">Q</span> / <span class="keycap">E</span> &rarr; rotation (berlawanan / searah jarum jam)</div>
+      <div class="shortcut-row"><span class="keycap">+</span> / <span class="keycap">−</span> &rarr; uniform scale</div>
+      <div class="shortcut-row"><span class="keycap">Z</span> / <span class="keycap">X</span> &rarr; scale X (kecil / besar)</div>
+      <div class="shortcut-row"><span class="keycap">C</span> / <span class="keycap">V</span> &rarr; scale Y (kecil / besar)</div>
+      <div class="shortcut-row"><span class="keycap">T</span> &rarr; toggle transform order · <span class="keycap">R</span> reset</div>
+      <div class="shortcut-row"><span class="keycap">1</span><span class="keycap">2</span><span class="keycap">3</span> &rarr; transform preset</div>
+      <div class="shortcut-row">Klik / drag mouse pada canvas &rarr; translation Object A</div>
+      <div class="shortcut-row"><span class="keycap">H</span> &rarr; bayangan order lawan · <span class="keycap">P</span> parent–child</div>
+    </div>
+  </section>
+
+  <!-- PERBANDINGAN ORDER -->
+  <section class="block cyan">
+    <span class="tag">Perbandingan Transform Order</span>
+    <h2>3. Dua Urutan Transformasi</h2>
+    <p>Keduanya memakai <strong>parameter yang sama</strong> (translation, rotation, scale) dan geometry yang sama. Karena perkalian matriks tidak komutatif, hasil visualnya berbeda begitu rotation dan translation tidak nol. Matriks di bawah ini dihitung langsung dari state Object A dan ikut berubah saat kamu menggerakkannya.</p>
+
+    <div class="compare-grid">
+      <div class="order-card active" id="orderCard0">
+        <h3>Order 1 — Scale → Rotate → Translate</h3>
+        <p class="mini-explain"><code class="pill">M = T · R · S</code><br>Objek diskala dan diputar terhadap <strong>pusatnya sendiri</strong>, baru dipindahkan. Posisi di layar sama dengan nilai translation.</p>
+        <pre class="matrix" id="mat0">-</pre>
+      </div>
+      <div class="order-card" id="orderCard1">
+        <h3>Order 2 — Scale → Translate → Rotate</h3>
+        <p class="mini-explain"><code class="pill">M = R · T · S</code><br>Objek diskala, dipindahkan, lalu seluruh hasilnya diputar terhadap <strong>origin (0,0)</strong> sehingga objek <strong>mengorbit</strong>: posisi di layar berubah mengikuti rotation.</p>
+        <pre class="matrix" id="mat1">-</pre>
+      </div>
+    </div>
+
+    <h3 style="margin-top:18px;">Cara Mengamati</h3>
+    <ul class="plain">
+      <li>Tekan <span class="keycap">2</span> (Stretch) lalu tahan <span class="keycap">Q</span> — pada Order 1 panah berputar di tempatnya, pada Order 2 panah berputar mengelilingi origin.</li>
+      <li>Garis putus-putus dari origin ke pusat objek memperlihatkan jarak pusat objek ke origin: tetap pada Order 2 saat rotation berubah, dan sama dengan jarak translation pada Order 1.</li>
+      <li>Tekan <span class="keycap">T</span> untuk menukar urutan mana yang menjadi objek utama dan mana yang menjadi bayangan.</li>
+    </ul>
+  </section>
+
+  <!-- FITUR PILIHAN -->
+  <section class="block yellow">
+    <span class="tag">Bagian B</span>
+    <h2>4. Fitur Pilihan yang Dikerjakan</h2>
+    <p>Minimal dua fitur pilihan diminta. Kelompok kami mengerjakan <strong>lima</strong> dari enam fitur:</p>
+
+    <div class="challenge-grid">
+      <div class="challenge-card">
+        <div class="challenge-card-head"><h3>Reset Transform (R)</h3><span class="status-badge">Selesai</span></div>
+        <span class="mini-hint">Tekan R atau tombol Reset Transform</span>
+        <p class="mini-explain">Mengembalikan position, rotation, dan scale Object A ke nilai awal dalam satu aksi <strong>event-based</strong> (sekali tekan, <code class="pill">e.repeat</code> diabaikan).</p>
+      </div>
+      <div class="challenge-card">
+        <div class="challenge-card-head"><h3>Tiga Transform Preset</h3><span class="status-badge">Selesai</span></div>
+        <span class="mini-hint">Tekan 1, 2, atau 3</span>
+        <p class="mini-explain">Preset 1 (Orbit), Preset 2 (Stretch, non-uniform scale 2.2 × 0.6), dan Preset 3 (Big Tilt, uniform scale 1.6). HUD menampilkan preset aktif dan kembali ke <em>manual</em> begitu nilai diubah.</p>
+      </div>
+      <div class="challenge-card">
+        <div class="challenge-card-head"><h3>Toggle Transform Order (T)</h3><span class="status-badge">Selesai</span></div>
+        <span class="mini-hint">Tekan T atau tombol Toggle Order</span>
+        <p class="mini-explain">Menukar <code class="pill">M = T·R·S</code> dan <code class="pill">M = R·T·S</code>. Order aktif tampil di HUD, dan order lawannya tetap terlihat sebagai bayangan.</p>
+      </div>
+      <div class="challenge-card">
+        <div class="challenge-card-head"><h3>Translation dengan Mouse</h3><span class="status-badge">Selesai</span></div>
+        <span class="mini-hint">Klik atau drag pada canvas</span>
+        <p class="mini-explain">Posisi pointer dikonversi dari pixel ke world coordinate lewat <code class="pill">getBoundingClientRect()</code>. Pada Order 2, posisi dunia dikembalikan ke parameter translation dengan <code class="pill">R(−θ)</code> agar objek tepat berada di bawah kursor.</p>
+      </div>
+      <div class="challenge-card">
+        <div class="challenge-card-head"><h3>Parent–Child &amp; Simple Orbit</h3><span class="status-badge">Selesai</span></div>
+        <span class="mini-hint">Object C mengikuti Object B (P untuk on/off)</span>
+        <p class="mini-explain">Model Matrix child dibentuk dari matriks parent: <code class="pill">M_C = M_B · R(orbit) · T(r,0) · R(spin) · S(0.45)</code>. Saat B bergerak, berputar, dan berdenyut, C ikut bergerak sambil mengorbit dan berputar sendiri.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ARSITEKTUR -->
+  <section class="block">
+    <h2>5. Struktur &amp; Cara Kerja Kode</h2>
+    <pre class="tree">praktikum-03/
+├── index.html     halaman + canvas + HUD + penjelasan
+├── style.css      tampilan (format sama seperti Praktikum 1)
+├── main.js        WebGL2, shader, input, game loop, HUD
+├── matrix3.js     library Matrix 3×3 (translation, rotation, scaling, multiply, compose)
+├── README.md      identitas kelompok, kontrol, cara menjalankan
+└── screenshot.png</pre>
+
+    <h3 style="margin-top:16px;">Alur Setiap Frame</h3>
+    <div class="flow vertical">
+      <div class="step">keydown / keyup / pointer → state</div><div class="arrow">↓</div>
+      <div class="step">deltaTime = (now − last) / 1000</div><div class="arrow">↓</div>
+      <div class="step">update(): posisi, sudut, skala × deltaTime</div><div class="arrow">↓</div>
+      <div class="step">Matrix3.compose() → Model Matrix</div><div class="arrow">↓</div>
+      <div class="step">uniformMatrix3fv(u_model) → drawArrays</div><div class="arrow">↓</div>
+      <div class="step">HUD diperbarui dari state yang sama</div>
+    </div>
+  </section>
+
+  <!-- CHECKLIST -->
+  <section class="block">
+    <h2>6. Checklist Pengujian</h2>
+    <p>Sebelum dikumpulkan, pastikan hal-hal berikut sudah terpenuhi:</p>
+    <ul class="checklist">
+      <li>Scene WebGL2 memiliki minimal dua object yang memakai vertex buffer yang sama (A, B, dan C).</li>
+      <li>Geometry disimpan dalam local coordinate; posisi, rotasi, dan ukuran hanya lewat Model Matrix 3×3 (<code class="pill">u_model</code>).</li>
+      <li>Translation, rotation, uniform scaling, dan non-uniform scaling bekerja.</li>
+      <li>Object A dikontrol keyboard secara kontinu (state-based) dengan deltaTime.</li>
+      <li>Object B beranimasi otomatis (rotation + scaling).</li>
+      <li>Dua urutan transformasi menghasilkan tampilan yang berbeda dan dapat diamati.</li>
+      <li>HUD menampilkan position, rotation, scale, dan transform order aktif — dan selalu mengikuti perubahan.</li>
+      <li>Sumbu X, sumbu Y, dan origin (0,0) terlihat.</li>
+      <li>Gerak konsisten pada frame rate berbeda (coba pilihan 30 FPS dan 15 FPS).</li>
+      <li>Tidak ada error merah pada Console pada penggunaan normal.</li>
+    </ul>
+  </section>
+
+  <!-- RINGKASAN -->
+  <section class="block cyan">
+    <h2>7. Ringkasan Praktikum</h2>
+    <ul class="plain">
+      <li>Local coordinate vs world coordinate</li>
+      <li>Matriks 3×3: <code class="pill">T(tx,ty)</code>, <code class="pill">R(θ)</code>, <code class="pill">S(sx,sy)</code></li>
+      <li>Komposisi matriks — urutan perkalian menentukan hasil</li>
+      <li>Uniform <code class="pill">mat3</code> ke vertex shader lewat <code class="pill">gl.uniformMatrix3fv</code></li>
+      <li>Satu vertex buffer dipakai ulang oleh banyak objek</li>
+      <li>State-based keyboard + <code class="pill">deltaTime</code> untuk gerak yang tidak bergantung frame rate</li>
+      <li>Parent–child transformation dan orbit sederhana</li>
+    </ul>
+
+    <h3 style="margin-top:18px;">Pola Keyboard</h3>
+    <div class="team-grid">
+      <div class="member" style="background: var(--paper);">
+        <strong>State-Based</strong><br>
+        &rarr; aksi selama tombol ditahan<br>
+        &rarr; panah, Q/E, +/−, Z/X, C/V
+      </div>
+      <div class="member" style="background: var(--paper);">
+        <strong>Event-Based</strong><br>
+        &rarr; aksi sekali tekan<br>
+        &rarr; R, T, H, P, 1/2/3
+      </div>
+    </div>
+
+    <p style="margin-top:16px;">Konsep transformasi ini menjadi dasar untuk transformasi 3D, kamera, dan scene graph pada pertemuan berikutnya.</p>
+  </section>
+
+</div>
+
+<footer>
+  Kelompok Pemula — Praktikum 3 Grafika Komputer
+  <span class="small">Nabilah Bunga Sulistia (5025241073) · Callista Fidelya Roba Gultom (5025241086)</span>
+</footer>
+
+<script src="matrix3.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
